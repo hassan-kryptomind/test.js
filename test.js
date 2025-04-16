@@ -1,4 +1,4 @@
-// ai-chatbot.js - CDN-ready version
+// ai-chatbot.js - Fixed version with proper session storage handling
 (function() {
   // Create namespace to avoid conflicts
   if (typeof window.AIChatbot === 'undefined') {
@@ -9,6 +9,7 @@
       welcomeMessage: 'Hi there! How can I help you today?',
       placeholderText: 'Type your message...',
       apiEndpoint: null,
+      conversationId: 'ai_chatbot_' + window.location.pathname.replace(/[^a-z0-9]/gi, '_'),
       initialized: false
     };
     
@@ -228,9 +229,7 @@
               <button class="close-btn">✕</button>
             </div>
             <div class="chat-messages">
-              <div class="message bot-message">
-                ${window.AIChatbot.welcomeMessage}
-              </div>
+              <!-- Messages will be loaded here -->
             </div>
             <div class="chat-input">
               <input type="text" placeholder="${window.AIChatbot.placeholderText}">
@@ -354,22 +353,50 @@
 
       // Save conversation to session storage
       const saveConversation = (text, sender) => {
-        let conversation = JSON.parse(sessionStorage.getItem('ai_chatbot_conversation') || '[]');
+        let conversation = getConversation();
         conversation.push({ text, sender, timestamp: new Date().toISOString() });
-        sessionStorage.setItem('ai_chatbot_conversation', JSON.stringify(conversation));
+        sessionStorage.setItem(window.AIChatbot.conversationId, JSON.stringify(conversation));
+      };
+
+      // Get conversation from session storage
+      const getConversation = () => {
+        try {
+          return JSON.parse(sessionStorage.getItem(window.AIChatbot.conversationId) || '[]');
+        } catch (e) {
+          console.error('Error parsing conversation:', e);
+          return [];
+        }
+      };
+
+      // Clear conversation
+      window.AIChatbot.clearConversation = () => {
+        sessionStorage.removeItem(window.AIChatbot.conversationId);
+        messagesContainer.innerHTML = '';
+        addMessage(window.AIChatbot.welcomeMessage, 'bot');
       };
 
       // Load conversation from session storage
       const loadConversation = () => {
-        const conversation = JSON.parse(sessionStorage.getItem('ai_chatbot_conversation') || '[]');
+        const conversation = getConversation();
+        
+        // Clear messages container first
+        messagesContainer.innerHTML = '';
+        
         if (conversation.length > 0) {
-          // Clear default welcome message
-          messagesContainer.innerHTML = '';
-          // Populate with saved messages
+          // Display saved conversation
           conversation.forEach(msg => {
-            addMessage(msg.text, msg.sender);
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.sender}-message`;
+            messageDiv.textContent = msg.text;
+            messagesContainer.appendChild(messageDiv);
           });
+        } else {
+          // Show welcome message if no saved conversation
+          addMessage(window.AIChatbot.welcomeMessage, 'bot');
         }
+        
+        // Scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
       };
 
       // Event listeners
@@ -378,7 +405,7 @@
         if (e.key === 'Enter') sendMessage();
       });
 
-      // Load previous conversation if any
+      // Load conversation history
       loadConversation();
 
       // Expose public methods
@@ -412,20 +439,19 @@
     };
   }
   
-  // Auto-initialize if data attributes are present
+  // Auto-initialize if not explicitly disabled
   const scripts = document.getElementsByTagName('script');
   const currentScript = scripts[scripts.length - 1];
   
-  if (currentScript.hasAttribute('data-autoload') && 
-      currentScript.getAttribute('data-autoload') !== 'false') {
+  // Only check if autoload is explicitly set to false
+  if (currentScript.getAttribute('data-autoload') !== 'false') {
     // Extract config from data attributes
     const config = {};
     for (const attr of currentScript.attributes) {
-      if (attr.name.startsWith('data-')) {
-        const key = attr.name.replace('data-', '');
-        if (key !== 'autoload') {
-          config[key] = attr.value;
-        }
+      if (attr.name.startsWith('data-') && attr.name !== 'data-autoload') {
+        // Convert data-attribute-name to attributeName
+        const key = attr.name.replace('data-', '').replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+        config[key] = attr.value;
       }
     }
     
